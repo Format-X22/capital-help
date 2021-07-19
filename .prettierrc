@@ -1,4 +1,16 @@
 {
   "singleQuote": true,
-  "trailingComma": "all"
+  "jsxSingleQuote": true,
+  "trailingComma": "all",
+  "printWidth": 100,
+  "tabWidth": 4,
+  "useTabs": false,
+  "overrides": [
+    {
+      "files": ["*.json", "*.yml", ".prettierrc"],
+      "options": {
+        "tabWidth": 2
+      }
+    }
+  ]
 }
