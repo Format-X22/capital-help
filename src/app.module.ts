@@ -1,10 +1,18 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ConfigModule } from '@nestjs/config';
+import { TelegramService } from './telegram.service';
+import { MenuService } from './menu.service';
 
 @Module({
-    imports: [],
-    controllers: [AppController],
-    providers: [AppService],
+    imports: [
+        ScheduleModule.forRoot(),
+        ConfigModule.forRoot({
+            isGlobal: true,
+            cache: true,
+        }),
+    ],
+    controllers: [],
+    providers: [TelegramService, MenuService],
 })
 export class AppModule {}
