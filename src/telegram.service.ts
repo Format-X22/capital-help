@@ -9,7 +9,7 @@ export class TelegramService implements OnModuleInit {
     private bot?: TelegramBot;
     private admin?: string;
     private adminChat?: number;
-    private next?: () => Promise<void>;
+    private next?: (text: string) => Promise<void>;
     private nextContext?: unknown;
 
     constructor(private configService: ConfigService) {}
@@ -49,7 +49,7 @@ export class TelegramService implements OnModuleInit {
         await this.bot.sendMessage(this.adminChat, message, options);
     }
 
-    setNextStep(next: () => Promise<void>): void {
+    setNextStep(next: (text: string) => Promise<void>): void {
         this.next = next;
     }
 
@@ -64,7 +64,7 @@ export class TelegramService implements OnModuleInit {
         }
 
         if (this.next && this.nextContext) {
-            await this.next.call(this.nextContext);
+            await this.next.call(this.nextContext, message.text || '');
         }
     }
 
