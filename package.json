@@ -22,11 +22,13 @@
     "@nestjs/platform-express": "^7.6.15",
     "@nestjs/schedule": "^1.0.0",
     "@types/node-telegram-bot-api": "^0.51.4",
+    "ccxt": "^1.53.72",
     "cron": "^1.7.2",
     "node-telegram-bot-api": "^0.53.0",
     "reflect-metadata": "^0.1.13",
     "rimraf": "^3.0.2",
-    "rxjs": "^6.6.6"
+    "rxjs": "^6.6.6",
+    "sleep-promise": "^9.1.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^7.6.0",

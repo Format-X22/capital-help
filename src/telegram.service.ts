@@ -58,6 +58,10 @@ export class TelegramService implements OnModuleInit {
             return;
         }
 
+        if (message.text === '/off' || message.text === '/drop') {
+            process.exit(0);
+        }
+
         if (this.next) {
             await this.next(message.text || '');
         }

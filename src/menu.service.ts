@@ -1,9 +1,13 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { TelegramService } from './telegram.service';
+import { EStock, TaskService, ESide, Task } from './task.service';
 
 enum EMainMenu {
     STATUS = '📄 Статус',
+    ERRORS = '📕 Ошибки',
     TASK = '➕ Задача',
+    CLEAR = '🧹 Очистить',
+    CANCEL = '❌ Отменить',
 }
 
 enum EConfirm {
@@ -11,40 +15,11 @@ enum EConfirm {
     CANCEL = 'Нет',
 }
 
-// TODO Move
-enum EStock {
-    BitMex = 'BitMex',
-    ByBit = 'ByBit',
-    Binance = 'Binance',
-    Deribit = 'Deribit',
-    Okex = 'Okex',
-    Huobi = 'Huobi',
-}
-
-// TODO Move
-enum TSide {
-    LONG = 'LONG',
-    SHORT = 'SHORT',
-}
-
-// TODO Move
-class TaskConfig {
-    stock?: EStock;
-    marginAmount?: number;
-    lineStart?: number;
-    lineAfter10?: number;
-    step?: number;
-    lineAfter20?: number;
-    side?: TSide;
-    spike?: number;
-    cancelAfter?: number;
-}
-
 @Injectable()
 export class MenuService implements OnModuleInit {
-    private taskConfig: TaskConfig = new TaskConfig();
+    private taskConfig: Task = new Task();
 
-    constructor(private tg: TelegramService) {}
+    constructor(private tg: TelegramService, private taskService: TaskService) {}
 
     async onModuleInit(): Promise<void> {
         await this.tg.sendText('Система запущена', false);
@@ -62,8 +37,20 @@ export class MenuService implements OnModuleInit {
                 await this.showStatus();
                 break;
 
+            case EMainMenu.ERRORS:
+                await this.showErrors();
+                break;
+
             case EMainMenu.TASK:
                 await this.constructTask();
+                break;
+
+            case EMainMenu.CLEAR:
+                await this.clearTaskPrompt();
+                break;
+
+            case EMainMenu.CANCEL:
+                await this.cancelTaskPrompt();
                 break;
 
             default:
@@ -71,22 +58,56 @@ export class MenuService implements OnModuleInit {
         }
     }
 
-    async showStatus(): Promise<void> {
-        // TODO -
+    private async showStatus(): Promise<void> {
+        await this.tg.sendText(this.toPrettyJson(this.taskService.getTasks()));
     }
 
-    async constructTask(): Promise<void> {
-        this.taskConfig = new TaskConfig();
+    private async showErrors(): Promise<void> {
+        await this.tg.sendText(this.toPrettyJson(this.taskService.getLast10Errors()));
+    }
+
+    private async clearTaskPrompt(): Promise<void> {
+        await this.tg.sendText('Какую задачу нужно очистить?');
+        this.setNext(this.clearTaskDo);
+    }
+
+    private async clearTaskDo(idString: string): Promise<void> {
+        if (Number.isNaN(idString)) {
+            await this.tg.sendText('Нужно ввести число');
+            return;
+        }
+
+        await this.tg.sendText(await this.taskService.clear(Number(idString)));
+        await this.mainMenu();
+    }
+
+    private async cancelTaskPrompt(): Promise<void> {
+        await this.tg.sendText('Какую задачу нужно отменить?');
+        this.setNext(this.cancelTaskDo);
+    }
+
+    private async cancelTaskDo(idString: string): Promise<void> {
+        if (Number.isNaN(idString)) {
+            await this.tg.sendText('Нужно ввести число');
+            return;
+        }
+
+        await this.tg.sendText(await this.taskService.cancel(Number(idString)));
+        await this.mainMenu();
+    }
+
+    private async constructTask(): Promise<void> {
+        this.taskConfig = new Task();
 
         await this.taskStockPrompt();
     }
 
-    async taskStockPrompt(): Promise<void> {
+    private async taskStockPrompt(): Promise<void> {
         await this.tg.sendText('Выбери биржу', Object.values(EStock));
         this.setNext(this.taskStockSelect);
     }
 
-    async taskStockSelect(selected: string): Promise<void> {
+    private async taskStockSelect(selected: string): Promise<void> {
         if (!(selected in EStock)) {
             await this.tg.sendText('Неизвестная биржа');
             return;
@@ -97,12 +118,12 @@ export class MenuService implements OnModuleInit {
         await this.taskMarginPrompt();
     }
 
-    async taskMarginPrompt(): Promise<void> {
+    private async taskMarginPrompt(): Promise<void> {
         await this.tg.sendText('Введи общую маржу для трат', false);
         this.setNext(this.taskMarginSelect);
     }
 
-    async taskMarginSelect(amountString: string): Promise<void> {
+    private async taskMarginSelect(amountString: string): Promise<void> {
         const amount = parseInt(amountString);
 
         if (Number.isNaN(amount)) {
@@ -112,103 +133,21 @@ export class MenuService implements OnModuleInit {
 
         this.taskConfig.marginAmount = amount;
 
-        await this.taskStartPrompt();
-    }
-
-    async taskStartPrompt(): Promise<void> {
-        await this.tg.sendText('Введи начало линии', false);
-        this.setNext(this.taskStartSelect);
-    }
-
-    async taskStartSelect(startString: string): Promise<void> {
-        const start = parseInt(startString);
-
-        if (Number.isNaN(start)) {
-            await this.tg.sendText('Нужно ввести число');
-            return;
-        }
-
-        this.taskConfig.lineStart = start;
-
-        await this.taskAfter10Prompt();
-    }
-
-    async taskAfter10Prompt(): Promise<void> {
-        await this.tg.sendText('Введи линию через 10 свечей', false);
-        this.setNext(this.taskAfter10Select);
-    }
-
-    async taskAfter10Select(after10String: string): Promise<void> {
-        this.taskConfig.lineStart = this.taskConfig.lineStart || 0;
-
-        const after10 = parseInt(after10String);
-
-        if (Number.isNaN(after10)) {
-            await this.tg.sendText('Нужно ввести число');
-            return;
-        }
-
-        this.taskConfig.lineAfter10 = after10;
-
-        if (this.taskConfig.lineStart > this.taskConfig.lineAfter10) {
-            this.taskConfig.side = TSide.LONG;
-        } else {
-            this.taskConfig.side = TSide.SHORT;
-        }
-
-        this.taskConfig.step = (this.taskConfig.lineAfter10 - this.taskConfig.lineStart) / 10;
-        this.taskConfig.lineAfter20 = this.taskConfig.lineStart + this.taskConfig.step * 20;
-
-        await this.taskSpikePrompt();
-    }
-
-    async taskSpikePrompt(): Promise<void> {
-        await this.tg.sendText('Введи спайк', false);
-        this.setNext(this.taskSpikeSelect);
-    }
-
-    async taskSpikeSelect(spikeString: string): Promise<void> {
-        const spike = parseInt(spikeString);
-
-        if (Number.isNaN(spike)) {
-            await this.tg.sendText('Нужно ввести число');
-            return;
-        }
-
-        this.taskConfig.spike = spike;
-
-        await this.taskCancelPrompt();
-    }
-
-    async taskCancelPrompt(): Promise<void> {
-        await this.tg.sendText('Введи через сколько свечей отменить', false);
-        this.setNext(this.taskCancelSelect);
-    }
-
-    async taskCancelSelect(cancelAfterString: string): Promise<void> {
-        const cancelAfter = parseInt(cancelAfterString);
-
-        if (Number.isNaN(cancelAfter)) {
-            await this.tg.sendText('Нужно ввести число');
-            return;
-        }
-
-        this.taskConfig.cancelAfter = cancelAfter;
-
+        // TODO -
         await this.taskConfirmPrompt();
     }
 
-    async taskConfirmPrompt(): Promise<void> {
+    private async taskConfirmPrompt(): Promise<void> {
         await this.tg.sendText(
-            `Всё верно?\n\n${JSON.stringify(this.taskConfig, null, 2)}`,
+            `Всё верно?\n\n${this.toPrettyJson(this.taskConfig)}`,
             Object.values(EConfirm),
         );
         this.setNext(this.taskConfirmSelect);
     }
 
-    async taskConfirmSelect(choice: string): Promise<void> {
+    private async taskConfirmSelect(choice: string): Promise<void> {
         if (choice === EConfirm.OK) {
-            // TODO -
+            this.taskService.add(this.taskConfig);
             await this.tg.sendText('Задача отправлена в работу');
         } else {
             await this.tg.sendText('Отменено');
@@ -217,13 +156,17 @@ export class MenuService implements OnModuleInit {
         await this.mainMenu();
     }
 
-    async setNext(next: (text: string) => Promise<void>): Promise<void> {
-        await this.tg.setNextStep(async (text) => {
+    private setNext(next: (text: string) => Promise<void>): void {
+        this.tg.setNextStep(async (text) => {
             if (text === '/cancel') {
                 await this.mainMenu();
             } else {
                 await next.call(this, text);
             }
         });
+    }
+
+    private toPrettyJson(data: unknown) {
+        return JSON.stringify(data, null, 2);
     }
 }
