@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { TelegramService } from './telegram.service';
-import { EStock, TaskService, ESide, Task } from './task.service';
+import { ECandleSize, ESide, EStock, Task } from './task.config';
+import { TaskService } from './task.service';
 
 enum EMainMenu {
     STATUS = '📄 Статус',
@@ -72,12 +73,13 @@ export class MenuService implements OnModuleInit {
     }
 
     private async clearTaskDo(idString: string): Promise<void> {
-        if (Number.isNaN(idString)) {
-            await this.tg.sendText('Нужно ввести число');
+        const id = Number(idString);
+
+        if (!(await this.checkNumber(id))) {
             return;
         }
 
-        await this.tg.sendText(await this.taskService.clear(Number(idString)));
+        await this.tg.sendText(await this.taskService.clear(id));
         await this.mainMenu();
     }
 
@@ -87,12 +89,13 @@ export class MenuService implements OnModuleInit {
     }
 
     private async cancelTaskDo(idString: string): Promise<void> {
-        if (Number.isNaN(idString)) {
-            await this.tg.sendText('Нужно ввести число');
+        const id = Number(idString);
+
+        if (!(await this.checkNumber(id))) {
             return;
         }
 
-        await this.tg.sendText(await this.taskService.cancel(Number(idString)));
+        await this.tg.sendText(await this.taskService.cancel(id));
         await this.mainMenu();
     }
 
@@ -124,16 +127,110 @@ export class MenuService implements OnModuleInit {
     }
 
     private async taskMarginSelect(amountString: string): Promise<void> {
-        const amount = parseInt(amountString);
+        const amount = Number(amountString);
 
-        if (Number.isNaN(amount)) {
-            await this.tg.sendText('Нужно ввести число');
+        if (!(await this.checkNumber(amount))) {
             return;
         }
 
         this.taskConfig.marginAmount = amount;
 
-        // TODO -
+        await this.taskZeroLeverPrompt();
+    }
+
+    private async taskZeroLeverPrompt(): Promise<void> {
+        await this.tg.sendText('Какая цена 0.00 уровня фибы?', false);
+        this.setNext(this.taskZeroLeverSelect);
+    }
+
+    private async taskZeroLeverSelect(levelString: string): Promise<void> {
+        const level = Number(levelString);
+
+        if (!(await this.checkNumber(level))) {
+            return;
+        }
+
+        this.taskConfig.zeroLevel = level;
+
+        await this.taskOneLevelPrompt();
+    }
+
+    private async taskOneLevelPrompt(): Promise<void> {
+        await this.tg.sendText('Какая цена 1.00 уровня фибы?', false);
+        this.setNext(this.taskOneLevelSelect);
+    }
+
+    private async taskOneLevelSelect(levelString: string): Promise<void> {
+        const config = this.taskConfig;
+        const zero = config.zeroLevel as number;
+        const level = Number(levelString);
+
+        if (!(await this.checkNumber(level))) {
+            return;
+        }
+
+        config.oneLevel = level;
+
+        const diff = Math.abs(config.oneLevel - zero) * 0.62;
+
+        if (config.oneLevel > zero) {
+            config.side = ESide.LONG;
+            config.sixLevel = zero + diff;
+        } else {
+            config.side = ESide.SHORT;
+            config.sixLevel = zero - diff;
+        }
+
+        await this.taskCancelPricePrompt();
+    }
+
+    private async taskCancelPricePrompt(): Promise<void> {
+        await this.tg.sendText('На какой цене отменить?', false);
+        this.setNext(this.taskCancelPriceSelect);
+    }
+
+    private async taskCancelPriceSelect(priceString: string): Promise<void> {
+        const price = Number(priceString);
+
+        if (!(await this.checkNumber(price))) {
+            return;
+        }
+
+        this.taskConfig.cancelPrice = price;
+
+        await this.taskCancelAfterCandlesPrompt();
+    }
+
+    private async taskCancelAfterCandlesPrompt(): Promise<void> {
+        await this.tg.sendText('Через сколько свечей отменить?', false);
+        this.setNext(this.taskCancelAfterCandlesSelect);
+    }
+
+    private async taskCancelAfterCandlesSelect(cancelString: string): Promise<void> {
+        const cancel = Number(cancelString);
+
+        if (!(await this.checkNumber(cancel))) {
+            return;
+        }
+
+        this.taskConfig.cancelAfterCandles = cancel;
+
+        await this.taskCandleSizePrompt();
+    }
+
+    private async taskCandleSizePrompt(): Promise<void> {
+        await this.tg.sendText('Какой размер свеч?', Object.values(ECandleSize));
+        this.setNext(this.taskCandlesSizeSelect);
+    }
+
+    private async taskCandlesSizeSelect(candleSize: string): Promise<void> {
+        if (!Object.values(ECandleSize).includes(candleSize as ECandleSize)) {
+            await this.tg.sendText('Неизвестный таймфрейм');
+            return;
+        }
+
+        this.taskConfig.candleSize = { ...ECandleSize }[candleSize];
+
         await this.taskConfirmPrompt();
     }
 
@@ -168,5 +265,14 @@ export class MenuService implements OnModuleInit {
 
     private toPrettyJson(data: unknown) {
         return JSON.stringify(data, null, 2);
+    }
+
+    private async checkNumber(value: number): Promise<boolean> {
+        if (Number.isNaN(value)) {
+            await this.tg.sendText('Нужно ввести число');
+            return false;
+        }
+
+        return true;
     }
 }
